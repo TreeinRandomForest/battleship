@@ -43,6 +43,7 @@ class Board:
                         placed = True
                         self.board[row:row+ship_length, col] = ship_length
 
+        self.n_to_hit = (self.board > 0).sum()
 
     def play(self):
         self.state = np.zeros(shape=(self.N, self.N)) #what the opposite player sees
@@ -54,13 +55,18 @@ class Board:
         if col < 0 or col >= self.N:
             raise ValueError(f"Please ensure col is between 0 and {self.N-1} [inclusive]")
         
+        if self.state[row, col] != 0:
+            raise ValueError(f"Hitting cell ({row}, {col}) again")
+
         if self.board[row, col] > 0:
-            print(f"Hit at (row, col)")
+            print(f"Hit at ({row}, {col})")
             self.state[row, col] = 1 #hit
+            return 1
 
         else:
-            print(f"Miss at (row, col)")
+            print(f"Miss at ({row}, {col})")
             self.state[row, col] = -1 #miss
+            return -1
 
         if print_state:
             print(self.state)
@@ -81,8 +87,67 @@ class Board:
         Measure:
         1. distribution of number of tries to discover all ships
         Victory involves discovering before opponent discovers our ships
-        '''
-        pass
-
     
-        
+        Modifications to rules below: updates to prob control moves
+        1. Use epsilon-greedy strategy: argmax probs with 1-epsilon and random from probs with epsilon
+        2. 
+
+        '''
+        prob = np.ones_like(self.state) #start with uniform probability
+        prob_norm = prob / prob.sum()
+
+        #get mappings
+        flattened_domain = np.arange(self.N*self.N)
+        idx_to_loc = {}
+        loc_to_idx = {}
+
+        idx_mat = np.arange(self.N*self.N).reshape(self.N, -1)
+        for row in range(self.N):
+            for col in range(self.N):
+                idx = idx_mat[row, col]
+                idx_to_loc[idx] = (row, col)
+                loc_to_idx[(row, col)] = idx
+
+
+        n_current_hits = 0
+        n_misses = 0
+        while n_current_hits != self.n_to_hit:
+            #keep playing till hit all ships
+            #in real games, game might terminate if opponent hits all your ships
+
+            row, col = idx_to_loc[np.random.choice(flattened_domain, p=prob_norm.flatten())]
+            hit_or_miss = self.hit(row, col)
+
+            prob[row, col] = 0 #don't hit this spot again
+            if hit_or_miss == 1: #increase weights for neighbors if hit
+                n_current_hits += 1
+
+                if row+1 < self.N: 
+                    if self.state[row+1, col]==0: #if not probed before                    
+                        prob[row+1, col] += 1
+
+                if row-1 >= 0: 
+                    if self.state[row-1, col]==0:
+                        prob[row-1, col] += 1
+    
+                if col+1 < self.N: 
+                    if self.state[row, col+1]==0:
+                        prob[row, col+1] += 1
+    
+                if col-1 >= 0:
+                    if self.state[row, col-1]==0:
+                        prob[row, col-1] += 1
+
+                print(self.board)
+                print("-----------")
+                print(self.state)
+                print("-----------")
+                print(prob)
+                print("-----------")
+            elif hit_or_miss==-1:
+                n_misses += 1    
+
+            prob_norm = prob / prob.sum() #re-normalize
+
+            print(f'Hits: {n_current_hits} Misses: {n_misses}')
+
